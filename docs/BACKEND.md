@@ -89,7 +89,37 @@ Both are enforced **server-side**, symmetric (WhatsApp-style):
 
 ---
 
-## 5. Dark mode
+## 5. Docker
+
+A single image (`Dockerfile`) runs the whole server role — nginx + php-fpm +
+Reverb + queue worker + scheduler, supervised.
+
+```bash
+# build (the --secret keeps nativephp/* GitHub fetches off the anon rate limit)
+DOCKER_BUILDKIT=1 docker build --secret id=github_token,env=GITHUB_TOKEN -t supernative .
+
+# run the full stack (app + mysql + redis)
+cp .env.docker .env.docker.local          # set APP_KEY + passwords
+docker compose --env-file .env.docker.local up --build -d
+```
+
+| Port | Service |
+|------|---------|
+| 8080 | HTTP API (nginx → php-fpm) |
+| 8081 | Reverb websockets |
+
+The entrypoint waits for the DB, runs `migrate --force`, then
+`config:cache` + `event:cache` (never `route:cache` — `Route::native()`
+registers Closure routes). Demo data self-seeds on first boot.
+
+Put nginx (8080) and Reverb (8081) behind your TLS terminator; then set
+`REVERB_HOST`, `REVERB_PORT=443`, `REVERB_SCHEME=https` so clients dial the
+public address while `REVERB_SERVER_*` stays the in-container bind.
+
+Files: `docker/{nginx,supervisord,php,opcache,php-fpm-pool}.conf`,
+`docker/entrypoint.sh`, `.env.docker`, `docker-compose.yml`.
+
+## 6. Dark mode
 
 Follows the OS: every native view carries `dark:` classes and re-renders on
 `AppearanceChanged`. The Settings "Appearance" selector stores a
