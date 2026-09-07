@@ -18,33 +18,17 @@ return new class extends Migration
         });
 
         Schema::table('messages', function (Blueprint $table) {
-            // Idempotency key from the sending device — a retried POST must not
-            // create a duplicate.
+            // Server-assigned idempotency key; the mirror stores it so pulled
+            // rows dedupe against anything the client created optimistically.
             $table->uuid('client_uuid')->nullable()->unique()->after('id');
-            $table->timestamp('delivered_at')->nullable()->after('body');
-        });
-
-        Schema::create('devices', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->string('name')->nullable();
-            $table->string('platform', 16)->default('unknown'); // ios | android | unknown
-            $table->string('push_token')->nullable();
-            $table->timestamp('last_seen_at')->nullable();
-            $table->timestamps();
-
-            $table->unique('push_token');
-            $table->index(['user_id', 'platform']);
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('devices');
-
         Schema::table('messages', function (Blueprint $table) {
             $table->dropUnique(['client_uuid']);
-            $table->dropColumn(['client_uuid', 'delivered_at']);
+            $table->dropColumn('client_uuid');
         });
 
         Schema::table('users', function (Blueprint $table) {

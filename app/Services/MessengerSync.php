@@ -38,10 +38,20 @@ class MessengerSync
         return $this->api->configured();
     }
 
-    /** Full pull. Cheap enough to call from a screen's mount(). */
+    /** Re-probe the server on app foreground (a previously-down API may be back). */
+    public function recheck(): void
+    {
+        $this->api->recheck();
+    }
+
+    /**
+     * Full pull. Called from a screen's mount() — so it must stay bounded:
+     * the one-shot online() probe caps a dead-server sync at ~3s instead of
+     * ~30s of stacked request timeouts.
+     */
     public function hydrate(): void
     {
-        if (! $this->api->configured()) {
+        if (! $this->api->configured() || ! $this->api->online()) {
             return;
         }
 
@@ -59,7 +69,7 @@ class MessengerSync
     /** Lightweight pulls for screens that don't need the whole world. */
     public function syncContacts(): void
     {
-        if (! $this->api->configured()) {
+        if (! $this->api->configured() || ! $this->api->online()) {
             return;
         }
 
@@ -74,7 +84,7 @@ class MessengerSync
 
     public function syncMe(): void
     {
-        if (! $this->api->configured()) {
+        if (! $this->api->configured() || ! $this->api->online()) {
             return;
         }
 

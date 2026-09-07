@@ -4,6 +4,8 @@ namespace App\NativeComponents;
 
 use App\Models\Conversation;
 use Illuminate\View\View;
+use Native\Mobile\Attributes\Poll;
+use Native\Mobile\Edge\Element;
 use Native\Mobile\Edge\Layouts\Builders\NavAction;
 use Native\Mobile\Edge\Layouts\Builders\NavBarOptions;
 
@@ -11,20 +13,38 @@ class ConvoList extends Screen
 {
     public string $query = '';
 
+    private bool $presenceSent = false;
+
+    // mount() does NO network — the first paint renders from the local mirror
+    // instantly; the API sync runs on the poll tick below so a slow/unreachable
+    // server can never freeze app launch.
     public function mount(): void
     {
-        // Foreground: pull the latest state and report presence (respecting
-        // the user's active-status flag).
-        $this->sync()->hydrate();
-
-        if ($this->sync()->enabled() && $this->me()->active_status_visible) {
-            $this->sync()->pushPresence(true);
-        }
+        $this->requireOnboarding();
     }
 
     public function onResume(): void
     {
+        // Coming back to the foreground — a previously-unreachable API may be
+        // back, so allow one fresh reachability probe.
+        $this->sync()->recheck();
+        $this->presenceSent = false;
+    }
+
+    /** Background refresh: pull latest state + report presence. */
+    #[Poll(6000)]
+    public function live(): void
+    {
+        if (! $this->hasIdentity()) {
+            return;
+        }
+
         $this->sync()->hydrate();
+
+        if (! $this->presenceSent && $this->sync()->enabled() && $this->me()->active_status_visible) {
+            $this->sync()->pushPresence(true);
+            $this->presenceSent = true;
+        }
     }
 
     public function navigationOptions(): ?NavBarOptions
@@ -56,8 +76,12 @@ class ConvoList extends Screen
         $this->navigate("/chats/{$id}");
     }
 
-    public function render(): View
+    public function render(): View|Element
     {
+        if ($this->onboardingRedirect) {
+            return $this->blankScreen();
+        }
+
         $me = $this->me();
 
         $rows = Conversation::query()

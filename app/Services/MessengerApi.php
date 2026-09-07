@@ -37,6 +37,38 @@ class MessengerApi
         return $this->configured() && filled($this->token());
     }
 
+    /**
+     * Cheap, bounded reachability probe (GET {base}/up — Laravel's health
+     * route). Memoised for the life of this instance so a dead server costs
+     * ONE ~3s timeout per session, not one per API call. Everything in
+     * request() short-circuits on this, which is what keeps a screen's
+     * mount() from freezing for 30s+ when the API is down.
+     */
+    public function online(): bool
+    {
+        if (! $this->configured()) {
+            return false;
+        }
+
+        return $this->memo['__online'] ??= (function (): bool {
+            try {
+                return Http::baseUrl(rtrim($this->baseUrl(), '/'))
+                    ->connectTimeout(4)
+                    ->timeout(5)
+                    ->get('up')
+                    ->successful();
+            } catch (Throwable) {
+                return false;
+            }
+        })();
+    }
+
+    /** Force the next call to re-probe reachability (e.g. on app foreground). */
+    public function recheck(): void
+    {
+        unset($this->memo['__online']);
+    }
+
     // ── Auth ────────────────────────────────────────────────────────────────
 
     /**
@@ -94,10 +126,16 @@ class MessengerApi
         ));
     }
 
-    /** Drop memoized reads — call after any mutation so the next read is fresh. */
+    /** Drop memoized reads — call after any mutation so the next read is fresh.
+     *  The reachability probe (`__online`) is kept; use recheck() for that. */
     public function flush(): void
     {
+        $online = $this->memo['__online'] ?? null;
         $this->memo = [];
+
+        if ($online !== null) {
+            $this->memo['__online'] = $online;
+        }
     }
 
     private function remember(string $key, callable $fetch): ?array
@@ -185,14 +223,18 @@ class MessengerApi
     {
         return Http::baseUrl(rtrim($this->baseUrl(), '/').'/api')
             ->acceptJson()
-            ->timeout(8)
+            ->connectTimeout(4)
+            ->timeout(6)
             ->when($this->token(), fn (PendingRequest $r) => $r->withToken($this->token()));
     }
 
     /** @return array<string, mixed>|null  Raw decoded body, or null on failure. */
     protected function request(callable $call): ?array
     {
-        if (! $this->configured()) {
+        // configured() gates "is there a server?"; online() gates "can we
+        // reach it right now?" — without the latter, four dead calls in a
+        // row block a screen's mount() for ~30s and the app looks hung.
+        if (! $this->configured() || ! $this->online()) {
             return null;
         }
 

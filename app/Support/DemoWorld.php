@@ -7,6 +7,8 @@ use App\Models\Message;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
@@ -21,10 +23,28 @@ class DemoWorld
 {
     protected static bool $ran = false;
 
+    /**
+     * Whether the demo world should be seeded at all.
+     *
+     * Off in production — a shipped app starts empty and the Onboarding
+     * screen creates the one real "me" user. `SEED_DEMO_WORLD` overrides
+     * the default in either direction (e.g. set it false locally to test
+     * the onboarding flow).
+     */
+    public static function enabled(): bool
+    {
+        return filter_var(
+            env('SEED_DEMO_WORLD', ! app()->isProduction()),
+            FILTER_VALIDATE_BOOL,
+        );
+    }
+
     /** Create the demo world if it isn't there yet. Safe to call on every boot. */
     public static function ensure(): void
     {
-        if (static::$ran) {
+        if (static::$ran || ! static::enabled()) {
+            static::$ran = true;
+
             return;
         }
 
@@ -44,20 +64,24 @@ class DemoWorld
         try {
             DB::transaction(static fn () => static::build());
         } catch (Throwable $e) {
-            // A parallel boot won the race — fine as long as data now exists.
-            if (! User::query()->exists()) {
-                throw $e;
-            }
+            // Never let a seeding failure escape boot() — that would be an
+            // unrecoverable crash on launch with no error screen. Log it and
+            // carry on; the app will surface a normal "no data" state.
+            Log::error('DemoWorld seed failed: '.$e->getMessage(), ['exception' => $e]);
         }
     }
 
     protected static function build(): void
     {
+        // One bcrypt pass, reused — 9 hashes at BCRYPT_ROUNDS=12 is seconds
+        // of dead time on a phone during first launch.
+        $password = Hash::make('password');
+
         $me = User::create([
             'name' => 'Jordan Rivera',
             'username' => 'jordan',
             'email' => 'you@supernative.app',
-            'password' => 'password',
+            'password' => $password,
             'tagline' => 'Building things with PHP on mobile',
             'accent' => '#0A7CFF',
             'is_online' => true,
@@ -75,7 +99,7 @@ class DemoWorld
             'name' => $p['name'],
             'username' => strtolower(explode(' ', $p['name'])[0]),
             'email' => strtolower(explode(' ', $p['name'])[0]).'@supernative.app',
-            'password' => 'password',
+            'password' => $password,
             'accent' => $p['accent'],
             'tagline' => $p['tagline'],
             'is_online' => $p['online'],

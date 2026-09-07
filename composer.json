@@ -10,10 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
-        "firebase/php-jwt": "^7.1",
         "laravel/framework": "^13.17",
-        "laravel/reverb": "^1.11",
-        "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
         "nativephp/mobile": "^4.3",
         "nativephp/mobile-ui": "^0.4"
@@ -80,7 +77,10 @@
     },
     "extra": {
         "laravel": {
-            "dont-discover": []
+            "dont-discover": [
+                "laravel/reverb",
+                "laravel/sanctum"
+            ]
         }
     },
     "config": {

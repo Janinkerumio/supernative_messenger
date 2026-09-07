@@ -11,7 +11,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
-use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable([
     'name', 'username', 'email', 'password', 'tagline', 'accent',
@@ -22,7 +21,7 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasFactory, Notifiable;
 
     protected function casts(): array
     {
@@ -46,11 +45,6 @@ class User extends Authenticatable
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class);
-    }
-
-    public function devices(): HasMany
-    {
-        return $this->hasMany(Device::class);
     }
 
     /** Two uppercase initials for the avatar monogram. */

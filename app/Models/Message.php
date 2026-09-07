@@ -7,12 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Message extends Model
 {
-    protected $fillable = ['conversation_id', 'user_id', 'body', 'client_uuid', 'delivered_at'];
-
-    protected function casts(): array
-    {
-        return ['delivered_at' => 'datetime'];
-    }
+    protected $fillable = ['conversation_id', 'user_id', 'body', 'client_uuid'];
 
     public function conversation(): BelongsTo
     {

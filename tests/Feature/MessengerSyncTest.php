@@ -28,6 +28,7 @@ it('reports configured + authenticated from the token', function () {
 
 it('hydrates contacts, conversations and messages by server id', function () {
     Http::fake([
+        'api.test/up' => Http::response('OK'),
         'api.test/api/me' => Http::response(['data' => [
             'id' => 1, 'name' => 'Jordan', 'username' => 'jordan', 'accent' => '#0A7CFF',
         ]]),
@@ -68,6 +69,7 @@ it('pushes a message through the API and mirrors the server row', function () {
     $convo->participants()->attach([1, 7]);
 
     Http::fake([
+        'api.test/up' => Http::response('OK'),
         'api.test/api/conversations/42/messages' => Http::response(['data' => [
             'id' => 900, 'conversation_id' => 42, 'user_id' => 1, 'body' => 'sent!',
             'client_uuid' => (string) Str::uuid(), 'created_at' => now()->toIso8601String(),
@@ -87,6 +89,18 @@ it('returns null from pushMessage when the API is unreachable', function () {
     expect(sync()->pushMessage(42, 'nope'))->toBeNull();
 });
 
+it('bails out after a single probe when the server is unreachable', function () {
+    // No stub for /up -> the reachability probe fails.
+    Http::fake(['api.test/up' => Http::response('', 503)]);
+
+    sync()->hydrate();
+
+    // Exactly one request (the probe). No register-device, no pulls — this is
+    // what stops a screen's mount() from stacking timeouts and freezing.
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/up'));
+});
+
 it('is inert when no API url is configured', function () {
     config(['services.messenger.url' => null]);
     Http::fake();
@@ -102,6 +116,7 @@ it('registers the device and stores the returned token', function () {
     Cache::forget('messenger.api_token');
 
     Http::fake([
+        'api.test/up' => Http::response('OK'),
         'api.test/api/auth/register-device' => Http::response([
             'token' => 'fresh-token',
             'user' => ['data' => ['id' => 1, 'name' => 'Jordan']],

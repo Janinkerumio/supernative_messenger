@@ -10,21 +10,53 @@ use App\Support\Runtime;
 use Native\Mobile\Facades\System;
 use Native\Mobile\Attributes\On;
 use Native\Mobile\Events\System\AppearanceChanged;
+use Native\Mobile\Edge\Element;
+use Native\Mobile\Edge\Elements\Column;
 use Native\Mobile\Edge\NativeComponent;
 
 /**
  * Base screen for the SuperNative messenger.
  *
- * "me" is the first local user (Jordan) — the mobile build has no login;
- * it registers that identity with the API on first sync.
+ * "me" is the single local user created by the Onboarding screen on first
+ * launch (or seeded by DemoWorld outside production). Device registration
+ * with the API happens silently on the first background sync.
  */
 abstract class Screen extends NativeComponent
 {
     protected ?User $currentUser = null;
 
+    protected bool $onboardingRedirect = false;
+
     protected function me(): User
     {
         return $this->currentUser ??= User::query()->oldest('id')->firstOrFail();
+    }
+
+    protected function hasIdentity(): bool
+    {
+        return User::query()->exists();
+    }
+
+    /**
+     * Bounce to the onboarding screen when there's no local identity yet.
+     * Call first thing in mount(); pair with the render() guard below.
+     */
+    protected function requireOnboarding(): bool
+    {
+        if ($this->hasIdentity()) {
+            return false;
+        }
+
+        $this->onboardingRedirect = true;
+        $this->replace('/welcome');
+
+        return true;
+    }
+
+    /** Placeholder tree published for the single frame before the redirect lands. */
+    protected function blankScreen(): Element
+    {
+        return Column::make()->fill();
     }
 
     protected function api(): MessengerApi

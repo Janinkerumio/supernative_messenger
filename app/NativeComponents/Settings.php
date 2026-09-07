@@ -8,6 +8,7 @@ use Native\Mobile\Attributes\On;
 use Native\Mobile\Attributes\Poll;
 use Native\Mobile\Events\PushNotification\TokenGenerated;
 use Native\Mobile\Facades\PushNotifications;
+use Native\Mobile\Edge\Element;
 use Native\Mobile\Edge\Layouts\Builders\NavBarOptions;
 
 class Settings extends Screen
@@ -28,7 +29,11 @@ class Settings extends Screen
 
     public function mount(): void
     {
-        $this->sync()->syncMe();
+        if ($this->requireOnboarding()) {
+            return;
+        }
+
+        // Local only — toggle state comes from the local `me` row.
         $me = $this->me();
 
         $this->activeStatus = (bool) $me->active_status_visible;
@@ -36,6 +41,21 @@ class Settings extends Screen
         $this->theme = $me->theme_preference ?? 'system';
 
         $this->refreshPushState();
+    }
+
+    #[Poll(8000)]
+    public function live(): void
+    {
+        if (! $this->hasIdentity()) {
+            return;
+        }
+
+        $this->sync()->syncMe();
+
+        $me = $this->me()->refresh();
+        $this->activeStatus = (bool) $me->active_status_visible;
+        $this->readReceipts = (bool) $me->read_receipts_enabled;
+        $this->theme = $me->theme_preference ?? 'system';
     }
 
     public function navigationOptions(): ?NavBarOptions
@@ -144,8 +164,12 @@ class Settings extends Screen
             : null;
     }
 
-    public function render(): View
+    public function render(): View|Element
     {
+        if ($this->onboardingRedirect) {
+            return $this->blankScreen();
+        }
+
         $me = $this->me();
 
         return view('native.settings', [

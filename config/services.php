@@ -36,19 +36,8 @@ return [
     ],
 
     /*
-    | Firebase Cloud Messaging (HTTP v1). Leave FCM_ENABLED=false and the
-    | sender no-ops cleanly; flip it on once FCM_PROJECT_ID + FCM_CREDENTIALS
-    | (path to a service-account JSON) are set.
-    */
-    'fcm' => [
-        'enabled' => env('FCM_ENABLED', false),
-        'project_id' => env('FCM_PROJECT_ID'),
-        'credentials' => env('FCM_CREDENTIALS'),
-    ],
-
-    /*
-    | The mobile (NativePHP) build reads this to reach the hosted API. When
-    | blank, the app runs fully offline against its local SQLite mirror.
+    | The hosted SuperNative API (the `supernative_server` project). Blank =
+    | the app runs fully offline against its local SQLite mirror.
     */
     'messenger' => [
         'url' => env('MESSENGER_API_URL'),

@@ -4,6 +4,8 @@ namespace App\NativeComponents;
 
 use App\Models\User;
 use Illuminate\View\View;
+use Native\Mobile\Attributes\Poll;
+use Native\Mobile\Edge\Element;
 use Native\Mobile\Edge\Layouts\Builders\NavBarOptions;
 
 class People extends Screen
@@ -12,12 +14,20 @@ class People extends Screen
 
     public function mount(): void
     {
-        $this->sync()->syncContacts();
+        $this->requireOnboarding();
     }
 
     public function onResume(): void
     {
-        $this->sync()->syncContacts();
+        $this->sync()->recheck();
+    }
+
+    #[Poll(8000)]
+    public function live(): void
+    {
+        if ($this->hasIdentity()) {
+            $this->sync()->syncContacts();
+        }
     }
 
     public function navigationOptions(): ?NavBarOptions
@@ -40,8 +50,12 @@ class People extends Screen
         $this->navigate('/chats/'.$this->conversationIdWith($other));
     }
 
-    public function render(): View
+    public function render(): View|Element
     {
+        if ($this->onboardingRedirect) {
+            return $this->blankScreen();
+        }
+
         $me = $this->me();
 
         $people = User::query()

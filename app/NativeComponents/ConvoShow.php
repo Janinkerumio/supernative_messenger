@@ -7,6 +7,7 @@ use App\Models\Message;
 use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 use Native\Mobile\Attributes\Poll;
+use Native\Mobile\Edge\Element;
 use Native\Mobile\Edge\Layouts\Builders\NavBarOptions;
 
 class ConvoShow extends Screen
@@ -29,16 +30,24 @@ class ConvoShow extends Screen
 
     public function mount(): void
     {
-        $this->conversationId = (int) $this->param('conversation', $this->conversationId);
+        if ($this->requireOnboarding()) {
+            return;
+        }
 
-        $this->pullThread(force: true);
-        $this->markRead();
+        // Local only — the thread renders instantly from the mirror. The first
+        // network pull happens on the poll tick (~2s later) so a slow server
+        // can't stall the push transition into this screen.
+        $this->conversationId = (int) $this->param('conversation', $this->conversationId);
     }
 
-    /** Near-real-time delivery when Reverb isn't wired into the Edge runtime. */
-    #[Poll(4000)]
+    /** Near-real-time delivery + read receipt. First fire ~2s after open. */
+    #[Poll(2500)]
     public function refresh(): void
     {
+        if ($this->conversationId <= 0) {
+            return;
+        }
+
         $this->pullThread(force: true);
         $this->markRead();
     }
@@ -76,6 +85,10 @@ class ConvoShow extends Screen
 
     public function navigationOptions(): ?NavBarOptions
     {
+        if ($this->onboardingRedirect || $this->conversationId <= 0) {
+            return null;
+        }
+
         $me = $this->me();
         $convo = $this->conversation();
 
@@ -121,8 +134,12 @@ class ConvoShow extends Screen
         $this->conversation = null;
     }
 
-    public function render(): View
+    public function render(): View|Element
     {
+        if ($this->onboardingRedirect || $this->conversationId <= 0) {
+            return $this->blankScreen();
+        }
+
         $me = $this->me();
         $convo = $this->conversation();
 

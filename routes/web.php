@@ -4,6 +4,7 @@ use App\NativeComponents\ConvoList;
 use App\NativeComponents\ConvoShow;
 use App\NativeComponents\Layouts\TabsLayout;
 use App\NativeComponents\NewChat;
+use App\NativeComponents\Onboarding;
 use App\NativeComponents\People;
 use App\NativeComponents\Settings;
 use Illuminate\Support\Facades\Route;
@@ -17,6 +18,9 @@ use Illuminate\Support\Facades\Route;
 | TabsLayout gives them the shared NavigationStack + tab bar chrome.
 |
 */
+
+// First-launch identity setup — no tab bar / nav chrome (outside the group).
+Route::native('/welcome', Onboarding::class);
 
 Route::nativeGroup(TabsLayout::class, function () {
     Route::native('/', ConvoList::class);
