@@ -41,4 +41,33 @@
             </column>
         </scroll-view>
     @endif
+
+    {{-- Pre-permission notification explainer (see ConvoList::pushPrimerTick).
+         Only ever visible on device while the decision is still open. --}}
+    <bottom-sheet visible="{{ $showPushPrimer ? '1' : '' }}" detents="medium" @dismiss="onPrimerDismissed">
+        <column class="w-full px-6 pt-4 pb-8 gap-4 items-center">
+            <column class="w-16 h-16 rounded-full items-center justify-center bg-[#FF375F]">
+                <icon name="bell.badge.fill" size="28" color="#FFFFFF" />
+            </column>
+            <text class="text-xl font-bold text-zinc-900 dark:text-zinc-50 text-center">Stay in the loop</text>
+            <text class="text-sm text-zinc-500 dark:text-zinc-400 text-center">
+                Turn on notifications and SuperNative will let you know the moment a new
+                message arrives — even when the app is closed. You can change this any
+                time in Settings.
+            </text>
+
+            <column class="w-full gap-2 pt-2">
+                <pressable class="w-full" @tap="enablePushFromPrimer">
+                    <column class="w-full rounded-2xl bg-[#0A7CFF] items-center py-3">
+                        <text class="text-base font-semibold text-white">Turn on notifications</text>
+                    </column>
+                </pressable>
+                <pressable class="w-full" @tap="dismissPushPrimer">
+                    <column class="w-full items-center py-3">
+                        <text class="text-base font-medium text-zinc-500 dark:text-zinc-400">Not now</text>
+                    </column>
+                </pressable>
+            </column>
+        </column>
+    </bottom-sheet>
 </column>

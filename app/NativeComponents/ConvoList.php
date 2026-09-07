@@ -4,14 +4,20 @@ namespace App\NativeComponents;
 
 use App\Models\Conversation;
 use Illuminate\View\View;
+use Native\Mobile\Attributes\On;
 use Native\Mobile\Attributes\Poll;
 use Native\Mobile\Edge\Element;
 use Native\Mobile\Edge\Layouts\Builders\NavAction;
 use Native\Mobile\Edge\Layouts\Builders\NavBarOptions;
+use Native\Mobile\Events\Alert\ButtonPressed;
+use Native\Mobile\Events\PushNotification\TokenGenerated;
 
 class ConvoList extends Screen
 {
     public string $query = '';
+
+    /** Drives the pre-permission notification explainer sheet. */
+    public bool $showPushPrimer = false;
 
     private bool $presenceSent = false;
 
@@ -24,16 +30,11 @@ class ConvoList extends Screen
             return;
         }
 
-        // Live updates for the threads we already know about. New threads get
-        // picked up on the next full mount; the poll covers the gap.
-        foreach (Conversation::query()->pluck('id') as $id) {
-            $this->watchConversation((int) $id, 'onRealtime');
-        }
-    }
-
-    public function onRealtime(mixed $event = null): void
-    {
-        $this->sync()->pullConversations();
+        // One always-on subscription (private-users.{id}) delivers every
+        // message across every thread — new conversations included. Handled by
+        // Screen::onInbox() → pullConversations(). #[Poll] below is the
+        // fallback for when the socket isn't connected.
+        $this->watchInbox();
     }
 
     public function onResume(): void
@@ -45,7 +46,7 @@ class ConvoList extends Screen
     }
 
     /** Background refresh: pull latest state, report presence, wire push. */
-    #[Poll(6000)]
+    #[Poll(2000)]
     public function live(): void
     {
         if (! $this->hasIdentity()) {
@@ -53,12 +54,63 @@ class ConvoList extends Screen
         }
 
         $this->sync()->hydrate();
-        $this->push()->autoRequestOnce();
         $this->push()->syncToken();
 
         if (! $this->presenceSent && $this->sync()->enabled() && $this->me()->active_status_visible) {
             $this->sync()->pushPresence(true);
             $this->presenceSent = true;
+        }
+    }
+
+    // ── Notification priming ─────────────────────────────────────────────
+    //
+    // The Edge equivalent of textbitz_gate's NotificationOptInModal: a
+    // pre-permission explainer sheet, offered once per launch while the
+    // decision is still open, a short beat after the list has settled.
+
+    #[Poll(2500)]
+    public function pushPrimerTick(): void
+    {
+        if (! $this->showPushPrimer && $this->hasIdentity() && $this->push()->shouldPrime()) {
+            $this->showPushPrimer = true;
+        }
+    }
+
+    /** "Turn on notifications" — run the same chain as the Settings toggle. */
+    public function enablePushFromPrimer(): void
+    {
+        $this->showPushPrimer = false;
+        $this->push()->markPrimeAccepted();
+        $this->push()->requestPermissionFlow('onPushToken', 'onNotificationDialog');
+    }
+
+    /** "Not now" — record the decision so the sheet never returns. */
+    public function dismissPushPrimer(): void
+    {
+        $this->showPushPrimer = false;
+        $this->push()->dismissPrime();
+    }
+
+    /**
+     * Backdrop tap / drag-down: just hide. No decision is recorded, so the
+     * explainer can appear again on a later launch (matches textbitz).
+     */
+    public function onPrimerDismissed(): void
+    {
+        $this->showPushPrimer = false;
+    }
+
+    #[On(TokenGenerated::class)]
+    public function onPushToken(string $token): void
+    {
+        $this->push()->sendToken($token);
+    }
+
+    #[On(ButtonPressed::class)]
+    public function onNotificationDialog(int $index): void
+    {
+        if ($index === 0) {   // "Open Settings"
+            $this->push()->openAppSettings();
         }
     }
 
@@ -125,6 +177,7 @@ class ConvoList extends Screen
         return view('native.convo-list', [
             'rows' => $rows,
             'empty' => $rows === [],
+            'showPushPrimer' => $this->showPushPrimer,
         ]);
     }
 }

@@ -10,9 +10,10 @@ use Native\Mobile\System;
 use Throwable;
 
 /**
- * FCM / APNs enrollment, token delivery to the API, and the permission
- * fallback chain: enroll → open app settings → manual "open settings" dialog
- * → an on-screen hint.
+ * FCM / APNs enrollment, token delivery to the API, the permission fallback
+ * chain (enroll → open app settings → manual "open settings" dialog → an
+ * on-screen hint), and the notification *priming* state — a one-time
+ * pre-permission explainer shown before the OS prompt (see shouldPrime()).
  *
  * Every native call is guarded so dev / tests (no bridge) are inert.
  */
@@ -21,6 +22,16 @@ class PushManager
     private const ASKED_KEY = 'push.enroll_requested';
 
     private const SENT_TOKEN_KEY = 'push.last_sent_token';
+
+    /** Persisted priming decision: 'enrolled' | 'dismissed' | null. */
+    private const PRIME_KEY = 'push.prime_decision';
+
+    /**
+     * Once-per-process guard so the priming sheet is offered at most once per
+     * launch (mirrors textbitz's module-level `offeredThisSession`). The
+     * PushManager is a singleton, so this survives poll ticks / re-renders.
+     */
+    private bool $primeOfferedThisRun = false;
 
     public function __construct(private readonly MessengerSync $sync)
     {
@@ -56,7 +67,7 @@ class PushManager
      */
     public function enroll(?string $tokenCallback = null): bool
     {
-        if (! Runtime::onDevice()) {
+        if (! Runtime::onDevice() || ! function_exists('nativephp_call')) {
             return false;
         }
 
@@ -66,6 +77,10 @@ class PushManager
             if ($tokenCallback) {
                 $pending->tokenGenerated($tokenCallback);
             }
+
+            // Fire the bridge call now (rather than leaving it to __destruct)
+            // so any failure surfaces here and can't escape during GC.
+            $pending->enroll();
 
             Cache::forever(self::ASKED_KEY, true);
 
@@ -77,16 +92,81 @@ class PushManager
         }
     }
 
-    /** Prompt for notifications once, quietly, right after onboarding. */
-    public function autoRequestOnce(): void
+    // ── Priming ───────────────────────────────────────────────────────────
+    //
+    // A pre-permission explainer shown *once*, before the OS prompt, only
+    // while the decision is still open. Ported from textbitz_gate's
+    // usePushPriming.js: session-once + a persisted decision + the same
+    // enroll → app settings → dialog fallback chain (see requestPermissionFlow).
+
+    /**
+     * True at most once per launch: on device, not offered yet this run, no
+     * stored decision, permission still `not_determined`. Sets the once-guard
+     * as a side effect (like `shouldOfferNotificationOptIn()`).
+     */
+    public function shouldPrime(): bool
     {
-        if (! Runtime::onDevice() || Cache::get(self::ASKED_KEY)) {
-            return;
+        if (! Runtime::onDevice() || $this->primeOfferedThisRun) {
+            return false;
         }
 
-        if ($this->permission() === 'not_determined') {
-            $this->enroll();
+        if (Cache::has(self::PRIME_KEY) || Cache::get(self::ASKED_KEY)) {
+            return false;
         }
+
+        if ($this->permission() !== 'not_determined') {
+            return false;
+        }
+
+        $this->primeOfferedThisRun = true;
+
+        return true;
+    }
+
+    /** 'enrolled' (user tapped through), 'dismissed' ("Not now"), or null. */
+    public function primeDecision(): ?string
+    {
+        return Cache::get(self::PRIME_KEY);
+    }
+
+    /** Record that the user opted in from the primer — never prime again. */
+    public function markPrimeAccepted(): void
+    {
+        Cache::forever(self::PRIME_KEY, 'enrolled');
+    }
+
+    /** Record an explicit "Not now" — never prime again on this account. */
+    public function dismissPrime(): void
+    {
+        Cache::forever(self::PRIME_KEY, 'dismissed');
+    }
+
+    /**
+     * The permission fallback chain, shared by the Settings toggle and the
+     * priming sheet: OS prompt → open app settings → manual dialog → hint.
+     * `$tokenHandler` / `$dialogHandler` are component method names.
+     *
+     * @return 'granted'|'enrolling'|'settings'|'dialog'|'hint'
+     */
+    public function requestPermissionFlow(string $tokenHandler, string $dialogHandler): string
+    {
+        if ($this->granted()) {
+            return 'granted';
+        }
+
+        if (! $this->blocked() && $this->enroll($tokenHandler)) {
+            return 'enrolling';
+        }
+
+        if ($this->openAppSettings()) {
+            return 'settings';
+        }
+
+        if ($this->manualDialog($dialogHandler)) {
+            return 'dialog';
+        }
+
+        return 'hint';
     }
 
     public function openAppSettings(): bool
@@ -170,5 +250,7 @@ class PushManager
     {
         Cache::forget(self::ASKED_KEY);
         Cache::forget(self::SENT_TOKEN_KEY);
+        Cache::forget(self::PRIME_KEY);
+        $this->primeOfferedThisRun = false;
     }
 }

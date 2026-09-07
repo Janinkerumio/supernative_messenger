@@ -43,9 +43,12 @@ class Settings extends Screen
         $this->theme = $me->theme_preference ?? 'system';
 
         $this->pushPermission = $this->push()->permission();
+
+        // Keep the app-wide inbox subscription alive while on this tab.
+        $this->watchInbox();
     }
 
-    #[Poll(8000)]
+    #[Poll(3000)]
     public function live(): void
     {
         if (! $this->hasIdentity()) {
@@ -151,34 +154,19 @@ class Settings extends Screen
         $this->pushHint = null;
         $this->pushFallbackTried = false;
 
+        // An explicit tap here is a decision — the priming sheet never needs
+        // to appear now.
+        $this->push()->markPrimeAccepted();
+
+        // enroll → open app settings → manual dialog → on-screen hint.
+        match ($this->push()->requestPermissionFlow('onPushToken', 'onNotificationDialog')) {
+            'enrolling' => $this->pushEnrolling = true,
+            'settings' => $this->pushHint = 'Allow notifications for SuperNative in the settings screen that just opened.',
+            'hint' => $this->pushHint = 'Notifications are off. Open your device Settings → SuperNative → Notifications to turn them on.',
+            default => null,   // 'granted' | 'dialog' — nothing more to show
+        };
+
         $this->pushPermission = $this->push()->permission();
-
-        if ($this->push()->granted()) {
-            return;
-        }
-
-        // 1) OS permission prompt / enrollment.
-        if (! $this->push()->blocked() && $this->push()->enroll('onPushToken')) {
-            $this->pushEnrolling = true;
-            $this->pushPermission = $this->push()->permission();
-
-            return;
-        }
-
-        // 2) Blocked, or enroll couldn't dispatch → open the app's settings.
-        if ($this->push()->openAppSettings()) {
-            $this->pushHint = 'Allow notifications for SuperNative in the settings screen that just opened.';
-
-            return;
-        }
-
-        // 3) Can't open settings → a native dialog asking them to do it manually.
-        if ($this->push()->manualDialog('onNotificationDialog')) {
-            return;
-        }
-
-        // 4) Last resort — an on-screen hint.
-        $this->pushHint = 'Notifications are off. Open your device Settings → SuperNative → Notifications to turn them on.';
     }
 
     #[On(ButtonPressed::class)]

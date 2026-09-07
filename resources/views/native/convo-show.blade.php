@@ -1,5 +1,7 @@
 <column class="w-full h-full bg-white dark:bg-black">
-    <scroll-view class="flex-1 w-full" auto-scroll-to="{{ max(count($rows) - 1, 0) }}">
+    {{-- scroll-anchor=bottom: opens at the newest message and follows new
+         content while the user is near the bottom (chat behaviour). --}}
+    <scroll-view class="flex-1 w-full" scroll-anchor="bottom">
         <column class="w-full px-3 py-4 gap-1">
             {{-- Conversation intro --}}
             <column class="w-full items-center gap-2 py-6">

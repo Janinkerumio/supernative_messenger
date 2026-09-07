@@ -17,11 +17,14 @@ class NewChat extends Screen
     public function mount(): void
     {
         $this->requireOnboarding();
+
+        // Keep the app-wide inbox subscription alive while composing.
+        $this->watchInbox();
     }
 
     // Contacts are already in the local mirror (ConvoList/People synced them).
     // Refresh in the background only.
-    #[Poll(8000)]
+    #[Poll(3000)]
     public function live(): void
     {
         if ($this->hasIdentity()) {

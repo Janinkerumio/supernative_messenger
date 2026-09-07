@@ -15,6 +15,10 @@ class People extends Screen
     public function mount(): void
     {
         $this->requireOnboarding();
+
+        // Hold the app-wide inbox subscription open while on this tab too, so
+        // messages keep arriving live when the user isn't looking at Chats.
+        $this->watchInbox();
     }
 
     public function onResume(): void
@@ -22,7 +26,7 @@ class People extends Screen
         $this->sync()->recheck();
     }
 
-    #[Poll(8000)]
+    #[Poll(3000)]
     public function live(): void
     {
         if ($this->hasIdentity()) {

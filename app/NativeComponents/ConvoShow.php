@@ -42,6 +42,10 @@ class ConvoShow extends Screen
         if ($this->conversationId > 0) {
             $this->watchConversation($this->conversationId, 'onRealtime');
         }
+
+        // Keep the rest of the mirror current too, so backing out to the chat
+        // list shows messages that arrived in other threads while we were here.
+        $this->watchInbox();
     }
 
     /** Websocket event on this thread's channel (or a reconnect → $event null). */
@@ -55,7 +59,7 @@ class ConvoShow extends Screen
      * Fallback + initial load. First fires ~5s in; mostly a no-op once the
      * websocket is delivering, the safety net when it isn't.
      */
-    #[Poll(5000)]
+    #[Poll(1000)]
     public function refresh(): void
     {
         if ($this->conversationId <= 0) {

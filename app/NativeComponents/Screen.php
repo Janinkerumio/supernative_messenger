@@ -133,6 +133,48 @@ abstract class Screen extends NativeComponent
         }
     }
 
+    /**
+     * Subscribe this screen to the current account's personal *inbox* channel,
+     * `private-users.{serverId}`. The server fans every `message.sent` /
+     * `message.read` for *all* of the account's conversations onto it, so —
+     * because Vibe refcounts channels natively — whichever screen is mounted
+     * keeps one inbox socket alive and the app receives messages in real time
+     * everywhere, not just on the open thread or the chat list.
+     *
+     * `$onEvent` is a method on the screen (default {@see onInbox()}). Inert
+     * off-device, without an API, or before the first sync has bound a server
+     * id to the account.
+     */
+    protected function watchInbox(string $onEvent = 'onInbox'): void
+    {
+        $serverId = Account::current()?->server_id;
+
+        if (! $serverId || ! Runtime::onDevice() || ! $this->api()->configured()) {
+            return;
+        }
+
+        try {
+            Vibe::private('users.'.$serverId)
+                ->on('message.sent', fn ($event) => $this->{$onEvent}($event))
+                ->on('message.read', fn ($event) => $this->{$onEvent}($event))
+                ->onReconnect(fn () => $this->{$onEvent}(null));
+        } catch (Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Default inbox handler — pull the conversation list so a new thread, a
+     * fresh preview or an unread count shows up immediately, whatever screen
+     * we're on. Screens that need finer behaviour override this.
+     */
+    public function onInbox(mixed $event = null): void
+    {
+        if ($this->sync()->enabled()) {
+            $this->sync()->pullConversations();
+        }
+    }
+
     /** True when the OS is in dark mode (drives the `dark:` blade classes too). */
     public function isDark(): bool
     {
