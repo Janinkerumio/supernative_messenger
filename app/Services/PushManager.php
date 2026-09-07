@@ -64,23 +64,25 @@ class PushManager
     /**
      * Ask for permission + enrol for a push token. Returns true if the request
      * was dispatched (not whether the user granted — that's async).
+     *
+     * The token is delivered back via the `TokenGenerated` native event, picked
+     * up by the `#[On(TokenGenerated::class)]` handler on whichever screen is
+     * mounted (Settings / ConvoList) and, as a backstop, by syncToken() on the
+     * poll tick. We deliberately do NOT register a fluent
+     * `->tokenGenerated($cb)` callback here: that path invokes the callback with
+     * `call_user_func()` and no object context, so a bare method name isn't a
+     * valid callable and fatals in NativeComponent::fireNativeCallback().
      */
-    public function enroll(?string $tokenCallback = null): bool
+    public function enroll(): bool
     {
         if (! Runtime::onDevice() || ! function_exists('nativephp_call')) {
             return false;
         }
 
         try {
-            $pending = PushNotifications::enroll();
-
-            if ($tokenCallback) {
-                $pending->tokenGenerated($tokenCallback);
-            }
-
             // Fire the bridge call now (rather than leaving it to __destruct)
             // so any failure surfaces here and can't escape during GC.
-            $pending->enroll();
+            PushNotifications::enroll()->enroll();
 
             Cache::forever(self::ASKED_KEY, true);
 
@@ -144,17 +146,21 @@ class PushManager
     /**
      * The permission fallback chain, shared by the Settings toggle and the
      * priming sheet: OS prompt → open app settings → manual dialog → hint.
-     * `$tokenHandler` / `$dialogHandler` are component method names.
+     *
+     * The token (from enroll) and the dialog button press are both delivered
+     * back through the screen's `#[On(TokenGenerated::class)]` /
+     * `#[On(ButtonPressed::class)]` handlers — never a fluent string callback,
+     * which fatals when NativeComponent invokes it without object context.
      *
      * @return 'granted'|'enrolling'|'settings'|'dialog'|'hint'
      */
-    public function requestPermissionFlow(string $tokenHandler, string $dialogHandler): string
+    public function requestPermissionFlow(): string
     {
         if ($this->granted()) {
             return 'granted';
         }
 
-        if (! $this->blocked() && $this->enroll($tokenHandler)) {
+        if (! $this->blocked() && $this->enroll()) {
             return 'enrolling';
         }
 
@@ -162,7 +168,7 @@ class PushManager
             return 'settings';
         }
 
-        if ($this->manualDialog($dialogHandler)) {
+        if ($this->manualDialog()) {
             return 'dialog';
         }
 
@@ -188,9 +194,10 @@ class PushManager
 
     /**
      * Last-resort native dialog telling the user to open settings by hand.
-     * $handler is a component method name for the ButtonPressed event.
+     * The button press comes back via the screen's `#[On(ButtonPressed::class)]`
+     * handler (`onNotificationDialog`), so nothing is wired here.
      */
-    public function manualDialog(string $handler): bool
+    public function manualDialog(): bool
     {
         if (! Runtime::onDevice()) {
             return false;
@@ -203,7 +210,7 @@ class PushManager
                     "Open your device Settings \u{2192} SuperNative \u{2192} Notifications and allow notifications, then come back.",
                     ['Open Settings', 'Not now'],
                 )
-                ->buttonPressed($handler);
+                ->show();
 
             return true;
         } catch (Throwable $e) {

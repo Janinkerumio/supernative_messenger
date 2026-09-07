@@ -51,6 +51,14 @@ class ConvoShow extends Screen
     /** Websocket event on this thread's channel (or a reconnect → $event null). */
     public function onRealtime(mixed $event = null): void
     {
+        // Paint the new message straight from the broadcast payload so it lands
+        // the instant the socket delivers it; the pull below then reconciles
+        // ordering / read state / anything derived.
+        if ($message = $this->realtimeMessage($event)) {
+            $this->sync()->applyRealtimeMessage($message);
+            $this->conversation = null;
+        }
+
         $this->pullThread(force: true);
         $this->markRead();
     }

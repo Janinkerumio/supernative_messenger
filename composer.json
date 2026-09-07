@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "fatlum/nativephp-push": "*",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "nativephp/mobile": "^4.3",
@@ -76,6 +77,13 @@
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
         ]
     },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "packages/nativephp-push",
+            "options": { "symlink": false }
+        }
+    ],
     "extra": {
         "laravel": {
             "dont-discover": [

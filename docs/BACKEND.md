@@ -30,7 +30,12 @@ VIBE_AUTH_ENDPOINT="${MESSENGER_API_URL}/api/broadcasting/auth"
   account's conversations onto it. Vibe refcounts channels natively, so
   whichever screen is mounted keeps that one socket alive: messages arrive
   live on any tab, and brand-new threads show up without a remount.
-  `Screen::onInbox()` (overridable) pulls the conversation list on each event.
+- **Instant apply.** `Screen::onInbox()` / `ConvoShow::onRealtime()` first hand
+  the `message.sent` broadcast payload straight to
+  `MessengerSync::applyRealtimeMessage()` — the row is upserted into the mirror
+  and the conversation bumped with **no HTTP round-trip**, so the bubble paints
+  the moment the socket delivers. A follow-up pull then reconciles ordering /
+  read state (and fetches the thread in full if it was previously unknown).
 - `ConvoShow` *also* subscribes to `private-conversations.{id}` for the open
   thread (force-pull + mark-read + presence). `#[Poll]` remains the fallback
   when the socket isn't connected.
@@ -48,35 +53,46 @@ VIBE_AUTH_ENDPOINT="${MESSENGER_API_URL}/api/broadcasting/auth"
 
 ## Push (FCM)
 
-### One-time Android wiring
+### The native layer — `fatlum/nativephp-push`
 
-NativePHP core only installs the Firebase Gradle plugin on behalf of a
-*Firebase plugin* — this app has none, so two extra steps are needed:
+Core `nativephp/mobile` ships the *PHP* push API (`PushNotifications` facade,
+`TokenGenerated` event, ephemeral background runtime) but **no native FCM/APNs
+implementation** — a Firebase plugin has to supply it. We use
+[`fatlum/nativephp-push`](https://nativephp.com/plugins/fatlum/nativephp-push),
+MIT, **vendored and patched** under `packages/nativephp-push/`:
 
-1. **`NATIVEPHP_PUSH_NOTIFICATIONS=true`** in `.env` — makes `native:run` /
-   `native:build` add `<uses-permission POST_NOTIFICATIONS>` to the manifest
-   (Android 13+ then shows a Notifications entry for the app and
-   `enroll()` can request it) and the aps-environment entitlement on iOS.
+- `composer.json` — `nativephp/mobile` constraint widened `^3.2` → `^3.2 || ^4.0`
+  (upstream hasn't tagged 4.x yet; verified compatible against 4.3.2 — every
+  core Kotlin symbol it calls exists with the same signature).
+- `nativephp.json` — added `android.gradle_plugins` for the Google Services
+  Gradle plugin (core 4.3's template no longer applies it conditionally).
+- `resources/google-services.json` — checked in here (Firebase project
+  `supernative-messenger`, package `com.janin.supernativemessenger`).
 
-2. **`php artisan messenger:android-push`** — run it after **every**
-   `native:install` and before `native:run` / `native:build`. It's idempotent
-   and:
-   - copies `resources/google-services.json` → `nativephp/android/app/`
-   - applies `com.google.gms.google-services` in the Gradle files
-   - adds `firebase-bom` + `firebase-messaging`
-   - belt-and-braces adds `POST_NOTIFICATIONS` to the manifest
+It's wired as a `path` repository in the root `composer.json` and listed in
+`NativeServiceProvider::plugins()`. On `native:run` / `native:build` the plugin
+compiler pulls in `firebase-messaging`, the `PushMessagingService`,
+`POST_NOTIFICATIONS`, the Gradle plugin, and copies `google-services.json` into
+the build (`native-push:copy-assets` hook) — **no manual gradle steps**.
 
-`resources/google-services.json` (Firebase console → project settings →
-your Android app, package `com.janin.supernativemessenger`) is required and
-gitignored.
+`.env` needs `APS_ENVIRONMENT=production` (iOS entitlement; the plugin manifest
+requires it as a secret). `NATIVEPHP_PUSH_NOTIFICATIONS=true` is kept as
+belt-and-braces. iOS push additionally needs a `GoogleService-Info.plist` and
+the `ios.assets` block restored in the fork's manifest — not set up (Android
+target).
 
 ### Runtime
 
 - `App\Services\PushManager` — enrollment + the permission fallback chain
   (`requestPermissionFlow()`): **enroll → open app settings → native "open
-  settings" dialog → on-screen hint**. The device token is POSTed to
-  `/api/devices/token`; the server's `SendMessagePush` listener does the
-  actual FCM send.
+  settings" dialog → on-screen hint**.
+- **Token flow.** The plugin fires core's `TokenGenerated` on first enrol and on
+  every background refresh (`onNewToken`). `AppServiceProvider` listens for it
+  globally (not just on a screen) → `PushManager::sendToken()` → `POST
+  /api/devices/token`. `PushManager::syncToken()` on the poll tick is the
+  backstop (`PushNotifications::getToken()`).
+- The server's `SendMessagePush` listener (queued on `MessageSent`) does the
+  actual FCM v1 send to the recipient's `devices.push_token` rows.
 
 ### Priming (pre-permission explainer)
 

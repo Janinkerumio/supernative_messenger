@@ -132,13 +132,10 @@ return [
     */
 
     'permissions' => [
-        // 'push_notifications' is the one key NativePHP also reads for Android:
-        // when true it injects <uses-permission POST_NOTIFICATIONS> into the
-        // AndroidManifest (so Android 13+ shows a Notifications toggle for the
-        // app and PushNotifications::enroll() can request it), and turns on the
-        // aps-environment entitlement + remote-notification background mode on
-        // iOS. Firebase config still has to be wired in — see
-        // `php artisan messenger:android-push` and docs/BACKEND.md.
+        // Belt-and-braces: the fatlum/nativephp-push plugin manifest already
+        // declares POST_NOTIFICATIONS (Android) and the aps-environment /
+        // remote-notification bits (iOS). This flag just makes core do the same
+        // — see docs/BACKEND.md "Push (FCM)".
         'push_notifications' => env('NATIVEPHP_PUSH_NOTIFICATIONS', false),
 
         // 'NSCameraUsageDescription' => 'Used to take a profile photo.',

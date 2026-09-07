@@ -81,7 +81,7 @@ class ConvoList extends Screen
     {
         $this->showPushPrimer = false;
         $this->push()->markPrimeAccepted();
-        $this->push()->requestPermissionFlow('onPushToken', 'onNotificationDialog');
+        $this->push()->requestPermissionFlow();
     }
 
     /** "Not now" — record the decision so the sheet never returns. */

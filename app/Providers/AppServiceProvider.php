@@ -6,8 +6,10 @@ use App\Services\MessengerApi;
 use App\Services\MessengerSync;
 use App\Services\PushManager;
 use App\Support\DemoWorld;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Native\Mobile\Events\PushNotification\TokenGenerated;
 use NativePHP\Vibe\Vibe;
 
 class AppServiceProvider extends ServiceProvider
@@ -36,6 +38,14 @@ class AppServiceProvider extends ServiceProvider
         if (class_exists(Vibe::class)) {
             app(Vibe::class)->resolveTokenUsing(fn () => app(MessengerApi::class)->token());
         }
+
+        // fatlum/nativephp-push dispatches TokenGenerated on every FCM token
+        // (initial enroll AND a background refresh via onNewToken → the
+        // ephemeral runtime). Register it globally, not just on a screen, so a
+        // refresh while no #[On(TokenGenerated)] screen is mounted still lands.
+        Event::listen(TokenGenerated::class, function (TokenGenerated $event): void {
+            app(PushManager::class)->sendToken($event->token);
+        });
 
         if ($this->app->isProduction()) {
             URL::forceScheme('https');

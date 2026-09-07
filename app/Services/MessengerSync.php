@@ -240,6 +240,39 @@ class MessengerSync
         }
     }
 
+    /**
+     * Apply a realtime `message.sent` broadcast payload straight to the mirror —
+     * no HTTP round-trip — so the message is on screen the instant the socket
+     * delivers it. Returns the mirrored row, or null when the thread isn't
+     * known locally yet (the caller's follow-up pull will fetch it in full).
+     *
+     * @param  array<string, mixed>  $message  the `message` value from MessageSent::broadcastWith()
+     */
+    public function applyRealtimeMessage(array $message): ?Message
+    {
+        $conversationId = (int) ($message['conversation_id'] ?? 0);
+
+        if (empty($message['id']) || $conversationId <= 0) {
+            return null;
+        }
+
+        // Unknown thread — let the follow-up pull fetch it with participants
+        // rather than leaving a headless conversation row in the list.
+        if (! Conversation::whereKey($conversationId)->exists()) {
+            return null;
+        }
+
+        if (! empty($message['sender']['id'])) {
+            $this->upsertUser((array) $message['sender']);
+        }
+
+        $row = $this->upsertMessage($message);
+
+        Conversation::whereKey($conversationId)->update(['last_message_at' => $row->created_at]);
+
+        return $row;
+    }
+
     // ── Pushes ──────────────────────────────────────────────────────────────
 
     /** POST a message; upsert + return the server row, or null on failure. */

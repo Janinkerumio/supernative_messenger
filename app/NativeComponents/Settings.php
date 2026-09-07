@@ -63,7 +63,7 @@ class Settings extends Screen
         if ($this->pushEnrolling && $this->pushPermission === 'denied' && ! $this->pushFallbackTried) {
             $this->pushFallbackTried = true;
             $this->pushEnrolling = false;
-            $this->push()->openAppSettings() || $this->push()->manualDialog('onNotificationDialog');
+            $this->push()->openAppSettings() || $this->push()->manualDialog();
         }
 
         $me = $this->me()->refresh();
@@ -159,7 +159,7 @@ class Settings extends Screen
         $this->push()->markPrimeAccepted();
 
         // enroll → open app settings → manual dialog → on-screen hint.
-        match ($this->push()->requestPermissionFlow('onPushToken', 'onNotificationDialog')) {
+        match ($this->push()->requestPermissionFlow()) {
             'enrolling' => $this->pushEnrolling = true,
             'settings' => $this->pushHint = 'Allow notifications for SuperNative in the settings screen that just opened.',
             'hint' => $this->pushHint = 'Notifications are off. Open your device Settings → SuperNative → Notifications to turn them on.',

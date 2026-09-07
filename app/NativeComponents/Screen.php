@@ -164,15 +164,44 @@ abstract class Screen extends NativeComponent
     }
 
     /**
-     * Default inbox handler — pull the conversation list so a new thread, a
-     * fresh preview or an unread count shows up immediately, whatever screen
-     * we're on. Screens that need finer behaviour override this.
+     * Default inbox handler. Applies the broadcast payload straight to the
+     * mirror first (instant), then reconciles with a list pull. Screens that
+     * need finer behaviour override this.
      */
     public function onInbox(mixed $event = null): void
     {
-        if ($this->sync()->enabled()) {
-            $this->sync()->pullConversations();
+        if (! $this->sync()->enabled()) {
+            return;
         }
+
+        if ($message = $this->realtimeMessage($event)) {
+            $this->sync()->applyRealtimeMessage($message);
+        }
+
+        $this->sync()->pullConversations();
+    }
+
+    /**
+     * Pull the `message` array out of a Vibe `message.sent` event (whatever
+     * shape it arrives in), or null for `message.read` / reconnect / no payload.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function realtimeMessage(mixed $event): ?array
+    {
+        $message = match (true) {
+            is_object($event) => $event->message ?? null,
+            is_array($event) => $event['message'] ?? null,
+            default => null,
+        };
+
+        if ($message === null) {
+            return null;
+        }
+
+        $decoded = json_decode(json_encode($message), true);
+
+        return is_array($decoded) ? $decoded : null;
     }
 
     /** True when the OS is in dark mode (drives the `dark:` blade classes too). */

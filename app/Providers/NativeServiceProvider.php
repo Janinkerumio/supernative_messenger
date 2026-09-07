@@ -36,6 +36,10 @@ class NativeServiceProvider extends ServiceProvider
         return [
             \Native\Mobile\UI\NativeUIServiceProvider::class,
             \NativePHP\Vibe\VibeServiceProvider::class,
+            // fatlum/nativephp-push — the native Swift/Kotlin FCM/APNs layer
+            // behind core's PushNotifications facade. Vendored + patched for
+            // nativephp/mobile 4.x under packages/nativephp-push.
+            \Lumi\NativePush\PushServiceProvider::class,
         ];
     }
 }
