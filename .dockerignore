@@ -27,3 +27,5 @@
 Dockerfile
 .dockerignore
 docker-compose.yml
+
+/resources/google-services.json
