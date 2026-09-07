@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Account;
 use App\Support\Runtime;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
@@ -20,7 +21,8 @@ use Throwable;
  */
 class MessengerApi
 {
-    private const TOKEN_KEY = 'messenger.api_token';
+    /** Legacy single-account key — still read as a fallback for pre-multi-account installs. */
+    private const LEGACY_TOKEN_KEY = 'messenger.api_token';
 
     public function configured(): bool
     {
@@ -189,32 +191,57 @@ class MessengerApi
         ]));
     }
 
-    // ── Token storage (native keychain, with an off-device fallback) ─────────
+    // ── Token storage (native keychain, per account, off-device fallback) ───
+
+    /** The storage key for the currently-active account's token. */
+    protected function tokenKey(): string
+    {
+        return Account::current()?->tokenKey() ?? self::LEGACY_TOKEN_KEY;
+    }
 
     public function token(): ?string
     {
+        $key = $this->tokenKey();
+
         // Native keychain is the source of truth on device; the cache mirror
         // keeps it fast and lets dev / tests work without the bridge.
         if (Runtime::onDevice()) {
-            $native = SecureStorage::get(self::TOKEN_KEY);
+            $native = SecureStorage::get($key);
 
             if ($native) {
                 return $native;
             }
         }
 
-        return Cache::get(self::TOKEN_KEY);
+        $token = Cache::get($key);
+
+        // One-time migration: an install that predates multi-account has its
+        // token under the legacy key — adopt it for the current account.
+        if (! $token && $key !== self::LEGACY_TOKEN_KEY) {
+            $legacy = Runtime::onDevice() ? SecureStorage::get(self::LEGACY_TOKEN_KEY) : null;
+            $legacy ??= Cache::get(self::LEGACY_TOKEN_KEY);
+
+            if ($legacy) {
+                $this->setToken($legacy);
+
+                return $legacy;
+            }
+        }
+
+        return $token;
     }
 
-    protected function setToken(?string $token): void
+    public function setToken(?string $token): void
     {
+        $key = $this->tokenKey();
+
         if (Runtime::onDevice()) {
-            SecureStorage::set(self::TOKEN_KEY, $token);
+            SecureStorage::set($key, $token);
         }
 
         $token === null
-            ? Cache::forget(self::TOKEN_KEY)
-            : Cache::forever(self::TOKEN_KEY, $token);
+            ? Cache::forget($key)
+            : Cache::forever($key, $token);
     }
 
     // ── Plumbing ────────────────────────────────────────────────────────────

@@ -13,7 +13,8 @@
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "nativephp/mobile": "^4.3",
-        "nativephp/mobile-ui": "^0.4"
+        "nativephp/mobile-ui": "^0.4",
+        "nativephp/mobile-vibe": "^2.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

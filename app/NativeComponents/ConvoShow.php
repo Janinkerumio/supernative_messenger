@@ -34,14 +34,28 @@ class ConvoShow extends Screen
             return;
         }
 
-        // Local only — the thread renders instantly from the mirror. The first
-        // network pull happens on the poll tick (~2s later) so a slow server
-        // can't stall the push transition into this screen.
+        // Local only — the thread renders instantly from the mirror.
         $this->conversationId = (int) $this->param('conversation', $this->conversationId);
+
+        // Live delivery over the websocket; the poll below is the fallback for
+        // when the socket isn't connected (offline, backgrounded, cold start).
+        if ($this->conversationId > 0) {
+            $this->watchConversation($this->conversationId, 'onRealtime');
+        }
     }
 
-    /** Near-real-time delivery + read receipt. First fire ~2s after open. */
-    #[Poll(2500)]
+    /** Websocket event on this thread's channel (or a reconnect → $event null). */
+    public function onRealtime(mixed $event = null): void
+    {
+        $this->pullThread(force: true);
+        $this->markRead();
+    }
+
+    /**
+     * Fallback + initial load. First fires ~5s in; mostly a no-op once the
+     * websocket is delivering, the safety net when it isn't.
+     */
+    #[Poll(5000)]
     public function refresh(): void
     {
         if ($this->conversationId <= 0) {

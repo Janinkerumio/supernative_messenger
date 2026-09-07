@@ -2,15 +2,15 @@
 
 namespace App\NativeComponents;
 
-use App\Models\User;
+use App\Models\Account;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 /**
- * First-launch identity setup. Shown at /welcome until a local user exists;
- * creates that user and drops into Chats. Device registration with the API
- * happens on the next background sync — nothing here touches the network, so
- * the "Get started" tap never hangs.
+ * Identity setup — first launch (`/welcome` is where the tab screens bounce
+ * when no account exists) and "Add account" from Settings. Creates a local
+ * {@see Account}, makes it current, and drops into Chats. Registration with
+ * the API is bounded (the online() probe) so "Get started" can't hang.
  */
 class Onboarding extends Screen
 {
@@ -24,14 +24,7 @@ class Onboarding extends Screen
 
     public ?string $error = null;
 
-    public function mount(): void
-    {
-        // Already set up (dev with demo data, or a stale deep link) — skip in.
-        if ($this->hasIdentity()) {
-            $this->onboardingRedirect = true;
-            $this->replace('/');
-        }
-    }
+    /** The form always renders — no auto-redirect (this is also "Add account"). */
 
     public function start(): void
     {
@@ -52,16 +45,38 @@ class Onboarding extends Screen
 
         $this->error = null;
 
-        User::create([
-            'name' => $name,
+        // Re-adding an account you've used before on this device: just switch.
+        if ($existing = Account::query()->where('username', $username)->first()) {
+            $this->sync()->switchTo($existing);
+            $this->finish();
+
+            return;
+        }
+
+        $account = Account::create([
             'username' => $username,
-            'email' => $username.'@supernative.app',
-            'password' => Str::random(40),
+            'name' => $name,
             'accent' => '#0A7CFF',
-            'is_online' => true,
         ]);
 
-        $this->currentUser = null;   // reset Screen::me() memo
+        $wasFirst = Account::query()->count() === 1;
+        $account->makeCurrent();
+
+        if (! $wasFirst) {
+            // Adding alongside another account — clear that one's threads.
+            $this->sync()->wipeMirror();
+        }
+
+        // Bounded: online() probe caps this; server_id fills in on the next
+        // background poll if we're offline right now.
+        $this->sync()->ensureRegistered();
+
+        $this->finish();
+    }
+
+    protected function finish(): void
+    {
+        $this->forgetMe();
         $this->onboardingRedirect = true;
         $this->replace('/');
     }
@@ -73,6 +88,7 @@ class Onboarding extends Screen
             'username' => $this->username,
             'error' => $this->error,
             'canSubmit' => trim($this->name) !== '' && trim($this->username) !== '',
+            'hasAccounts' => Account::query()->exists(),
         ]);
     }
 }

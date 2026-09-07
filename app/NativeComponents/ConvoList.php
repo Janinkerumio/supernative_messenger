@@ -20,7 +20,20 @@ class ConvoList extends Screen
     // server can never freeze app launch.
     public function mount(): void
     {
-        $this->requireOnboarding();
+        if ($this->requireOnboarding()) {
+            return;
+        }
+
+        // Live updates for the threads we already know about. New threads get
+        // picked up on the next full mount; the poll covers the gap.
+        foreach (Conversation::query()->pluck('id') as $id) {
+            $this->watchConversation((int) $id, 'onRealtime');
+        }
+    }
+
+    public function onRealtime(mixed $event = null): void
+    {
+        $this->sync()->pullConversations();
     }
 
     public function onResume(): void
@@ -31,7 +44,7 @@ class ConvoList extends Screen
         $this->presenceSent = false;
     }
 
-    /** Background refresh: pull latest state + report presence. */
+    /** Background refresh: pull latest state, report presence, wire push. */
     #[Poll(6000)]
     public function live(): void
     {
@@ -40,6 +53,8 @@ class ConvoList extends Screen
         }
 
         $this->sync()->hydrate();
+        $this->push()->autoRequestOnce();
+        $this->push()->syncToken();
 
         if (! $this->presenceSent && $this->sync()->enabled() && $this->me()->active_status_visible) {
             $this->sync()->pushPresence(true);

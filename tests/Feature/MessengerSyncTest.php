@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
@@ -11,9 +12,14 @@ use Illuminate\Support\Str;
 
 beforeEach(function () {
     config(['services.messenger.url' => 'https://api.test']);
-    Cache::forever('messenger.api_token', 'test-token');
-    // A local "me" so Screen::me() / ensureRegistered() resolve.
+
+    // A signed-in "jordan" account (server id 1) with a stored token.
     User::factory()->create(['id' => 1, 'name' => 'Jordan', 'username' => 'jordan']);
+    Account::create([
+        'username' => 'jordan', 'name' => 'Jordan', 'server_id' => 1,
+        'is_current' => true, 'last_used_at' => now(),
+    ]);
+    Cache::forever('messenger.api_token.jordan', 'test-token');
 });
 
 function sync(): MessengerSync
@@ -112,20 +118,22 @@ it('is inert when no API url is configured', function () {
     expect(sync()->enabled())->toBeFalse();
 });
 
-it('registers the device and stores the returned token', function () {
-    Cache::forget('messenger.api_token');
+it('registers the device, stores the token and binds the account', function () {
+    Cache::forget('messenger.api_token.jordan');
+    Account::current()->update(['server_id' => null]);
 
     Http::fake([
         'api.test/up' => Http::response('OK'),
         'api.test/api/auth/register-device' => Http::response([
             'token' => 'fresh-token',
-            'user' => ['data' => ['id' => 1, 'name' => 'Jordan']],
+            'user' => ['id' => 5, 'name' => 'Jordan', 'username' => 'jordan'],
         ]),
     ]);
 
     sync()->ensureRegistered();
 
-    expect(app(MessengerApi::class)->token())->toBe('fresh-token');
+    expect(app(MessengerApi::class)->token())->toBe('fresh-token')
+        ->and(Account::current()->fresh()->server_id)->toBe(5);
     Http::assertSent(fn ($r) => $r->url() === 'https://api.test/api/auth/register-device'
         && $r['username'] === 'jordan');
 });

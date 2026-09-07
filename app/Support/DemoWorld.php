@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
@@ -37,6 +38,13 @@ class DemoWorld
             env('SEED_DEMO_WORLD', ! app()->isProduction()),
             FILTER_VALIDATE_BOOL,
         );
+    }
+
+    /** Run the seed regardless of the once-per-process guard (for db:seed). */
+    public static function reseed(): void
+    {
+        static::$ran = false;
+        static::ensure();
     }
 
     /** Create the demo world if it isn't there yet. Safe to call on every boot. */
@@ -85,6 +93,16 @@ class DemoWorld
             'tagline' => 'Building things with PHP on mobile',
             'accent' => '#0A7CFF',
             'is_online' => true,
+        ]);
+
+        // The active local account points at Jordan (server id == local id here).
+        Account::create([
+            'username' => $me->username,
+            'name' => $me->name,
+            'accent' => $me->accent,
+            'server_id' => $me->id,
+            'is_current' => true,
+            'last_used_at' => now(),
         ]);
 
         $people = collect([

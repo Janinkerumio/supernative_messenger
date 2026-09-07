@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use App\Support\Runtime;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Native\Mobile\Facades\System;
@@ -99,18 +101,85 @@ class MessengerSync
 
     public function ensureRegistered(): void
     {
-        if ($this->api->authenticated()) {
+        $account = Account::current();
+
+        if ($this->api->authenticated() && $account?->server_id) {
             return;
         }
 
-        $me = User::query()->oldest('id')->first();
-
-        $this->api->registerDevice([
-            'name' => $me?->name ?? 'You',
-            'username' => $me?->username ?? 'you',
+        $result = $this->api->registerDevice([
+            'name' => $account?->name ?? 'You',
+            'username' => $account?->username ?? 'you',
             'platform' => $this->platform(),
             'device_name' => 'SuperNative mobile',
         ]);
+
+        // Bind the account to the server user id so me() and every mirror
+        // upsert (which are keyed by server id) resolve to the same row.
+        if ($account && ! empty($result['user']['id'])) {
+            $serverId = (int) $result['user']['id'];
+
+            // Drop the provisional (username-keyed) stand-in me() may have made.
+            User::query()->where('username', $account->username)->where('id', '!=', $serverId)->delete();
+
+            $account->forceFill(['server_id' => $serverId])->save();
+            $this->upsertUser($result['user']);
+        }
+    }
+
+    /**
+     * Switch the active identity: swap the token, drop the previous account's
+     * mirror, and pull the new one's world. A deliberate user action, so a
+     * full re-sync is fine.
+     */
+    public function switchTo(Account $target): void
+    {
+        $target->makeCurrent();
+
+        $this->api->flush();
+        $this->api->recheck();
+        $this->wipeMirror();
+        $this->hydrate();
+    }
+
+    /**
+     * Sign out of the current account. Returns the account switched to, or
+     * null when none remain (the caller should send the user to onboarding).
+     */
+    public function signOut(): ?Account
+    {
+        $current = Account::current();
+
+        if ($current) {
+            $this->api->forgetToken();
+            $current->delete();
+        }
+
+        $this->wipeMirror();
+
+        $next = Account::query()->orderByDesc('last_used_at')->orderByDesc('id')->first();
+
+        if ($next) {
+            $this->switchTo($next);
+        }
+
+        return $next;
+    }
+
+    /**
+     * Drop everything that belongs to a signed-in session's view — threads,
+     * messages, and any mirrored user that isn't one of our own accounts.
+     */
+    public function wipeMirror(): void
+    {
+        DB::transaction(function () {
+            Message::query()->delete();
+            DB::table('conversation_user')->delete();
+            Conversation::query()->delete();
+
+            $keep = Account::query()->whereNotNull('server_id')->pluck('server_id')->all();
+            User::query()->when($keep, fn ($q) => $q->whereNotIn('id', $keep))->delete();
+        });
     }
 
     public function platform(): string

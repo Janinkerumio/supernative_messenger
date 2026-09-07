@@ -2,24 +2,29 @@
 
 namespace App\NativeComponents;
 
+use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Services\MessengerApi;
 use App\Services\MessengerSync;
+use App\Services\PushManager;
 use App\Support\Runtime;
+use Illuminate\Support\Str;
 use Native\Mobile\Facades\System;
 use Native\Mobile\Attributes\On;
 use Native\Mobile\Events\System\AppearanceChanged;
 use Native\Mobile\Edge\Element;
 use Native\Mobile\Edge\Elements\Column;
 use Native\Mobile\Edge\NativeComponent;
+use NativePHP\Vibe\Facades\Vibe;
+use Throwable;
 
 /**
  * Base screen for the SuperNative messenger.
  *
- * "me" is the single local user created by the Onboarding screen on first
- * launch (or seeded by DemoWorld outside production). Device registration
- * with the API happens silently on the first background sync.
+ * The active identity is the `is_current` {@see Account}. Its mirrored `User`
+ * row (keyed by server id) is resolved by me(); before the first sync a
+ * provisional local row stands in so screens can still query by id.
  */
 abstract class Screen extends NativeComponent
 {
@@ -29,12 +34,43 @@ abstract class Screen extends NativeComponent
 
     protected function me(): User
     {
-        return $this->currentUser ??= User::query()->oldest('id')->firstOrFail();
+        if ($this->currentUser) {
+            return $this->currentUser;
+        }
+
+        $account = Account::current();
+
+        if ($account?->server_id && ($user = User::find($account->server_id))) {
+            return $this->currentUser = $user;
+        }
+
+        if ($account) {
+            // Not registered yet (first launch offline, or mid-onboarding).
+            // A persisted stand-in keeps `$me->id` queryable; ensureRegistered()
+            // replaces it with the server-id row on the first successful sync.
+            return $this->currentUser = User::firstOrCreate(
+                ['username' => $account->username],
+                [
+                    'name' => $account->name,
+                    'accent' => $account->accent,
+                    'email' => $account->username.'@local.supernative',
+                    'password' => Str::random(32),
+                    'is_online' => true,
+                ],
+            );
+        }
+
+        return $this->currentUser = User::query()->oldest('id')->firstOrFail();
     }
 
     protected function hasIdentity(): bool
     {
-        return User::query()->exists();
+        return Account::query()->exists();
+    }
+
+    protected function forgetMe(): void
+    {
+        $this->currentUser = null;
     }
 
     /**
@@ -67,6 +103,34 @@ abstract class Screen extends NativeComponent
     protected function sync(): MessengerSync
     {
         return app(MessengerSync::class);
+    }
+
+    protected function push(): PushManager
+    {
+        return app(PushManager::class);
+    }
+
+    /**
+     * Subscribe this screen to a conversation's realtime channel. `$onEvent`
+     * is a method on the screen invoked (with the raw event object) for each
+     * `message.sent` / `message.read` / `presence.changed`. Auto-unsubscribes
+     * when the screen unmounts. Inert off-device or without an API configured.
+     */
+    protected function watchConversation(int $conversationId, string $onEvent): void
+    {
+        if (! Runtime::onDevice() || ! $this->api()->configured()) {
+            return;
+        }
+
+        try {
+            Vibe::private('conversations.'.$conversationId)
+                ->on('message.sent', fn ($event) => $this->{$onEvent}($event))
+                ->on('message.read', fn ($event) => $this->{$onEvent}($event))
+                ->on('presence.changed', fn ($event) => $this->{$onEvent}($event))
+                ->onReconnect(fn () => $this->{$onEvent}(null));
+        } catch (Throwable $e) {
+            report($e);
+        }
     }
 
     /** True when the OS is in dark mode (drives the `dark:` blade classes too). */

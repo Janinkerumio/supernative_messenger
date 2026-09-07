@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\User;
 use App\NativeComponents\ConvoList;
@@ -15,6 +16,11 @@ function seedWorld(): array
 {
     $me = User::factory()->create(['name' => 'Jordan Rivera', 'username' => 'jordan']);
     $friend = User::factory()->create(['name' => 'Maya Chen', 'username' => 'maya']);
+
+    Account::create([
+        'username' => $me->username, 'name' => $me->name, 'accent' => $me->accent,
+        'server_id' => $me->id, 'is_current' => true, 'last_used_at' => now(),
+    ]);
 
     $convo = Conversation::create(['is_group' => false]);
     $convo->participants()->attach([$me->id, $friend->id]);
@@ -56,7 +62,7 @@ it('renders settings', function () {
     Native::test(Settings::class)->assertNoNavigation()->assertSee('Privacy');
 });
 
-it('renders onboarding when there is no user', function () {
+it('renders onboarding', function () {
     Native::test(Onboarding::class)->assertSee('Welcome to SuperNative');
 });
 

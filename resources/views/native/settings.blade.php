@@ -7,7 +7,7 @@
     <scroll-view class="flex-1 w-full">
         <column class="w-full gap-6 py-4">
 
-            {{-- Profile --}}
+            {{-- Profile / current account --}}
             <row class="w-full items-center gap-4 px-4">
                 <column class="w-16 h-16 rounded-full items-center justify-center bg-[{{ $accent }}]">
                     <text class="text-xl font-bold text-white">{{ $initials }}</text>
@@ -20,6 +20,49 @@
                     @endif
                 </column>
             </row>
+
+            {{-- Accounts --}}
+            <column class="w-full">
+                <text class="{{ $section }}">Accounts</text>
+                <column class="{{ $card }}">
+                    @foreach ($otherAccounts as $acc)
+                        <pressable native:key="acc-{{ $acc['id'] }}" class="w-full" @tap="switchAccount({{ $acc['id'] }})">
+                            <row class="w-full items-center gap-3 px-4 py-3">
+                                <column class="w-9 h-9 rounded-full items-center justify-center bg-[{{ $acc['accent'] }}]">
+                                    <text class="text-sm font-bold text-white">{{ $acc['initials'] }}</text>
+                                </column>
+                                <column class="flex-1 gap-0.5">
+                                    <text class="text-base text-zinc-900 dark:text-zinc-50" max-lines="1">{{ $acc['name'] }}</text>
+                                    <text class="text-xs text-zinc-500 dark:text-zinc-400">{{ $acc['handle'] }}</text>
+                                </column>
+                                <text class="text-xs font-semibold text-[#0A7CFF]">Switch</text>
+                            </row>
+                        </pressable>
+                        <divider class="w-full ml-16" />
+                    @endforeach
+
+                    <pressable class="w-full" @tap="addAccount">
+                        <row class="w-full items-center gap-3 px-4 py-3">
+                            <column class="w-9 h-9 rounded-full items-center justify-center bg-zinc-100 dark:bg-[#2C2C2E]">
+                                <icon name="plus" size="16" color="#0A7CFF" />
+                            </column>
+                            <text class="{{ $label }}">Add account</text>
+                            <icon name="chevron.right" size="13" color="#C7C7CC" />
+                        </row>
+                    </pressable>
+
+                    <divider class="w-full ml-16" />
+
+                    <pressable class="w-full" @tap="signOut">
+                        <row class="w-full items-center gap-3 px-4 py-3">
+                            <column class="w-9 h-9 rounded-full items-center justify-center bg-[#FDE7E9] dark:bg-[#3A1B1B]">
+                                <icon name="rectangle.portrait.and.arrow.right" size="15" color="#E5484D" />
+                            </column>
+                            <text class="flex-1 text-base text-[#E5484D]">Sign out{{ count($otherAccounts) ? ' of this account' : '' }}</text>
+                        </row>
+                    </pressable>
+                </column>
+            </column>
 
             {{-- Privacy --}}
             <column class="w-full">
@@ -65,20 +108,17 @@
                         </column>
                         @if ($pushOn)
                             <icon name="checkmark.circle.fill" size="22" color="#31D158" />
-                        @elseif ($pushBlocked)
-                            <pressable @tap="openSystemSettings">
-                                <column class="rounded-full bg-zinc-100 dark:bg-[#2C2C2E] px-3 py-1.5">
-                                    <text class="text-xs font-semibold text-[#0A7CFF]">Open Settings</text>
-                                </column>
-                            </pressable>
                         @else
                             <pressable @tap="enablePush">
-                                <column class="rounded-full bg-[#0A7CFF] px-3 py-1.5">
-                                    <text class="text-xs font-semibold text-white">Turn on</text>
+                                <column class="rounded-full px-3 py-1.5 {{ $pushBlocked ? 'bg-zinc-100 dark:bg-[#2C2C2E]' : 'bg-[#0A7CFF]' }}">
+                                    <text class="text-xs font-semibold {{ $pushBlocked ? 'text-[#0A7CFF]' : 'text-white' }}">{{ $pushBlocked ? 'Open Settings' : 'Turn on' }}</text>
                                 </column>
                             </pressable>
                         @endif
                     </row>
+                    @if ($pushHint)
+                        <text class="{{ $hint }}">{{ $pushHint }}</text>
+                    @endif
                 </column>
             </column>
 
